@@ -15,12 +15,18 @@ export const bangumiBatchInput: DownloadVideoInput = {
   getInputs: async instance => instance?.checkedInputItems ?? [],
   component: async () =>
     createEpisodesPicker(async instance => {
-      const metaUrl = document.querySelector("meta[property='og:url']")
-      if (metaUrl === null) {
-        logError('获取番剧数据失败: 无法找到 Season ID')
+      const metadata = dq('script[type="application/ld+json"]')
+      if (!metadata) {
+        logError('获取番剧数据失败: 无法找到 Metadata')
         return []
       }
-      const seasonId = metaUrl.getAttribute('content')?.match(/play\/ss(\d+)/)?.[1]
+      const metadataJson = JSON.parse(metadata.innerHTML.trim())
+      const metaUrl: string = lodash.get(metadataJson, 'itemListElement.0.url', null)
+      if (metaUrl === null) {
+        logError('获取番剧数据失败: 无法找到 metaUrl')
+        return []
+      }
+      const seasonId = metaUrl.match(/play\/ss(\d+)/)?.[1]
       if (seasonId === undefined) {
         logError('获取番剧数据失败: 无法解析 Season ID')
         return []
@@ -32,26 +38,32 @@ export const bangumiBatchInput: DownloadVideoInput = {
         logError(`获取番剧数据失败: 无法获取番剧集数列表, message=${json.message}`)
         return []
       }
-      const items: any[] = json.result.main_section.episodes
-      return items.map((it, index) => {
-        const nText: string = it.long_title ? it.title : (index + 1).toString()
-        const title: string = it.long_title ? it.long_title : it.title
-        return {
-          key: it.cid,
-          title: `${nText} - ${title}`,
-          isChecked: index < instance.maxCheckedItems,
-          inputItem: {
-            aid: it.aid,
-            cid: it.cid,
-            title: formatTitle(getGeneralSettings().batchFilenameFormat, false, {
-              ep: title,
-              cid: it.cid,
+      const mapEpisodeItem = (totalLength: number) => {
+        return (it: any, index: number) => {
+          const nText: string = it.long_title ? it.title : (index + 1).toString()
+          const title: string = it.long_title ? it.long_title : it.title
+          return {
+            key: it.cid,
+            title: `${nText} - ${title}`,
+            isChecked: index < instance.maxCheckedItems,
+            inputItem: {
               aid: it.aid,
-              n: formatNumber(parseFloat(nText), items.length) ?? nText,
-            }),
-            allowQualityDrop: true,
-          },
-        } as EpisodeItem
-      })
+              cid: it.cid,
+              title: formatTitle(getGeneralSettings().batchFilenameFormat, false, {
+                ep: title,
+                cid: it.cid,
+                aid: it.aid,
+                n: formatNumber(parseFloat(nText), totalLength) ?? nText,
+              }),
+              allowQualityDrop: true,
+            },
+          } as EpisodeItem
+        }
+      }
+      const items: any[] = json.result.main_section.episodes
+      const subItems: any[] =
+        json.result.section?.flatMap((subSection: any) => subSection.episodes) ?? []
+      const allItems = [...items, ...subItems]
+      return allItems.map(mapEpisodeItem(allItems.length))
     }),
 }

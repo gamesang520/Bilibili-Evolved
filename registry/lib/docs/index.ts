@@ -1,4 +1,4 @@
-import { ComponentMetadata } from '@/components/types'
+import { defineComponentMetadata } from '@/components/define'
 import { cdnRoots } from '@/core/cdn-types'
 import { branches } from '@/core/meta'
 import { getComponentsDoc } from './components-doc'
@@ -19,6 +19,7 @@ export interface DocSourceItem {
   name: string
   displayName: string
   description?: string
+  descriptionText?: string
   fullAbsolutePath: string
   fullRelativePath: string
   owner?: string
@@ -92,7 +93,7 @@ ${getDocText(pluginsDoc.title, pluginsDoc.items)}
     }
   }
 }
-export const doc: ComponentMetadata = {
+export const doc = defineComponentMetadata({
   name: 'featureDocsGenerator',
   displayName: '功能文档生成器',
   entry,
@@ -101,4 +102,4 @@ export const doc: ComponentMetadata = {
     delete unsafeWindow.generateDocs
   },
   tags: [componentsTags.utils],
-}
+})

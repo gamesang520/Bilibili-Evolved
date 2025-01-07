@@ -45,6 +45,13 @@
           正在计算大小
         </div>
       </template>
+      <div class="download-video-config-item">
+        <div class="download-video-config-title">使用备用下载地址:</div>
+        <SwitchBox v-model="useBackupUrls" />
+      </div>
+      <div class="download-video-config-description">
+        若默认下载地址速度缓慢, 可以尝试更换备用下载地址.
+      </div>
       <component
         :is="a.component"
         v-for="a of assetsWithOptions"
@@ -59,9 +66,8 @@
       <div
         v-if="selectedOutput && selectedOutput.description"
         class="download-video-config-description"
-      >
-        {{ selectedOutput.description }}
-      </div>
+        v-html="selectedOutput.description"
+      ></div>
       <component
         :is="selectedOutput.component"
         v-if="selectedOutput && selectedOutput.component"
@@ -86,17 +92,17 @@ import { getComponentSettings } from '@/core/settings'
 import { matchUrlPattern } from '@/core/utils'
 import { logError } from '@/core/utils/log'
 import { formatFileSize } from '@/core/utils/formatters'
-import { VPopup, VButton, VDropdown, VIcon } from '@/ui'
+import { VPopup, VButton, VDropdown, VIcon, SwitchBox } from '@/ui'
 import { registerAndGetData } from '@/plugins/data'
 import { allQualities, VideoQuality } from '@/components/video/video-quality'
 import { Toast } from '@/core/toast'
 import { getFriendlyTitle } from '@/core/utils/title'
 import { bangumiBatchInput } from './inputs/bangumi/batch'
-import { videoBatchInput } from './inputs/video/batch'
+import { videoBatchInput, videoSeasonBatchInput } from './inputs/video/batch'
 import { videoSingleInput } from './inputs/video/input'
 import { videoDashAvc, videoDashHevc, videoDashAv1, videoAudioDash } from './apis/dash'
 import { videoFlv } from './apis/flv'
-import { toastOutput } from './outputs/toast'
+import { streamSaverOutput } from './outputs/stream-saver'
 import {
   DownloadVideoAction,
   DownloadVideoApi,
@@ -109,6 +115,7 @@ import {
 const [inputs] = registerAndGetData('downloadVideo.inputs', [
   videoSingleInput,
   videoBatchInput,
+  videoSeasonBatchInput,
   bangumiBatchInput,
 ] as DownloadVideoInput[])
 const [apis] = registerAndGetData('downloadVideo.apis', [
@@ -120,13 +127,14 @@ const [apis] = registerAndGetData('downloadVideo.apis', [
 ] as DownloadVideoApi[])
 const [assets] = registerAndGetData('downloadVideo.assets', [] as DownloadVideoAssets[])
 const [outputs] = registerAndGetData('downloadVideo.outputs', [
-  toastOutput,
+  streamSaverOutput,
 ] as DownloadVideoOutput[])
 const { basicConfig } = getComponentSettings('downloadVideo').options as {
   basicConfig: {
     api: string
     quality: number
     output: string
+    useBackupUrls: boolean
   }
 }
 const filterData = <T extends { match?: TestPattern }>(items: T[]) => {
@@ -146,6 +154,7 @@ export default Vue.extend({
     VButton,
     VDropdown,
     VIcon,
+    SwitchBox,
   },
   props: {
     triggerElement: {
@@ -154,6 +163,7 @@ export default Vue.extend({
   },
   data() {
     const lastOutput = basicConfig.output
+    const lastUseBackupUrls = basicConfig.useBackupUrls
     return {
       open: false,
       busy: false,
@@ -173,6 +183,7 @@ export default Vue.extend({
       selectedApi: undefined,
       outputs,
       selectedOutput: outputs.find(it => it.name === lastOutput) || outputs[0],
+      useBackupUrls: lastUseBackupUrls || false,
     }
   },
   computed: {
@@ -217,6 +228,12 @@ export default Vue.extend({
         return
       }
       basicConfig.output = output.name
+    },
+    useBackupUrls(useBackupUrls: boolean) {
+      if (useBackupUrls === undefined) {
+        return
+      }
+      basicConfig.useBackupUrls = useBackupUrls
     },
   },
   mounted() {
@@ -283,6 +300,7 @@ export default Vue.extend({
         const qualityVideoInfo = await api.downloadVideoInfo(testItem)
         this.testData.videoInfo = qualityVideoInfo
       } catch (error) {
+        console.error('[updateTestVideoInfo] failed', error)
         this.testData.videoInfo = undefined
       }
     },
@@ -304,20 +322,26 @@ export default Vue.extend({
           Toast.info('未接收到可下载数据, 请检查输入源和格式是否适用于当前视频.', '下载视频', 3000)
           return
         }
+        if (this.useBackupUrls) {
+          videoInfos.forEach(videoInfo => {
+            videoInfo.fragments.forEach(fragment => {
+              fragment.url =
+                fragment.backupUrls && fragment.backupUrls.length !== 0
+                  ? fragment.backupUrls.at(0)
+                  : fragment.url
+            })
+          })
+        }
         const action = new DownloadVideoAction(videoInfos)
-        const extraAssets = (
-          await Promise.all(
-            assets.map(a =>
-              a.getAssets(
-                videoInfos,
-                this.$refs.assetsOptions.find((c: any) => c.$attrs.name === a.name),
-              ),
-            ),
-          )
-        ).flat()
-        action.extraAssets.push(...extraAssets)
-        await action.downloadExtraAssets()
+        assets.forEach(a => {
+          const assetsType = a?.getUrls ? action.extraOnlineAssets : action.extraAssets
+          assetsType.push({
+            asset: a,
+            instance: this.$refs.assetsOptions.find((c: any) => c.$attrs.name === a.name),
+          })
+        })
         await output.runAction(action, instance)
+        await action.downloadExtraAssets()
       } catch (error) {
         logError(error)
       } finally {
@@ -359,7 +383,7 @@ export default Vue.extend({
 
     .title {
       font-size: 16px;
-      font-weight: bold;
+      @include semi-bold();
       flex-grow: 1;
       margin: 0 8px;
     }
@@ -390,8 +414,11 @@ export default Vue.extend({
     align-self: stretch;
   }
   .download-video-config-description {
-    opacity: 0.5;
+    color: #888d;
     margin-top: 4px;
+    a {
+      color: var(--theme-color-70);
+    }
   }
   &-footer {
     @include h-center();

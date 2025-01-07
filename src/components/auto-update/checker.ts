@@ -13,6 +13,8 @@ import {
   UpdateCheckItem,
   CheckSingleTypeUpdateConfig,
 } from './utils'
+import type { Options } from '.'
+import { isDataSaveMode } from '@/core/utils'
 
 export const checkUpdate = async (config: CheckUpdateConfig) => {
   const {
@@ -22,9 +24,12 @@ export const checkUpdate = async (config: CheckUpdateConfig) => {
     force = false,
     maxCount = Infinity,
   } = config
+  if (isDataSaveMode()) {
+    return '当前为流量计费网络, 跳过更新检查.'
+  }
   const now = Number(new Date())
   const { devMode } = getGeneralSettings()
-  const { options } = getComponentSettings(name)
+  const { options } = getComponentSettings<Options>(name)
   // Remove uninstalled items
   Object.keys(items)
     .filter(it => !existPredicate(it))
@@ -137,7 +142,7 @@ export const checkAllUpdate = async (config: CheckSingleTypeUpdateConfig) => {
 }
 export const silentCheckUpdate = () =>
   checkAllUpdate({
-    maxCount: getComponentSettings(name).options.maxUpdateCount,
+    maxCount: getComponentSettings<Options>(name).options.maxUpdateCount,
   })
 export const silentCheckUpdateAndReload = reload(silentCheckUpdate)
 

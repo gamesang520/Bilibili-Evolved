@@ -141,19 +141,27 @@ export const loadComponent = async (component: ComponentMetadata) => {
 /** 加载所有用户组件的定义 (不运行) */
 export const loadAllUserComponents = async () => {
   const { settings } = await import('@/core/settings')
-  const { loadFeaturesFromCodes, FeatureKind } = await import(
-    '@/core/external-input/load-features-from-codes'
-  )
+  const { loadFeatureCode } = await import('@/core/external-input/load-feature-code')
+
   const loadUserComponent = (component: ComponentMetadata) => {
     components.push(component)
     componentsMap[component.name] = component
   }
-  const userComponents = await loadFeaturesFromCodes(
-    FeatureKind.Component,
-    Object.keys(settings.userComponents),
-    Object.values(settings.userComponents).map(it => it.code),
-  )
-  userComponents.forEach(loadUserComponent)
+
+  for (const [name, setting] of Object.entries(settings.userComponents)) {
+    const { code } = setting
+    let metadata: ComponentMetadata
+    try {
+      metadata = loadFeatureCode(code) as ComponentMetadata
+    } catch (e) {
+      console.error('从代码加载用户组件失败。代码可能有语法错误或代码执行时有抛出值。', {
+        componentName: name,
+        error: e,
+      })
+      continue
+    }
+    loadUserComponent(metadata)
+  }
 }
 /** 载入所有组件 */
 export const loadAllComponents = async () => {
@@ -161,8 +169,8 @@ export const loadAllComponents = async () => {
   const { loadAllPlugins } = await import('@/plugins/plugin')
   const loadComponents = () =>
     loadAllPlugins(components)
-      .then(() => Promise.allSettled(components.map(loadI18n)))
-      .then(() => Promise.allSettled(components.map(loadComponent)))
+      .then(() => Promise.all(components.map(loadI18n)))
+      .then(() => Promise.all(components.map(loadComponent)))
       .then(async () => {
         if (generalSettings.devMode) {
           const { componentLoadTime, componentResolveTime } = await import(
@@ -173,12 +181,11 @@ export const loadAllComponents = async () => {
           logStats('components resolve', componentResolveTime)
         }
       })
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     if (generalSettings.scriptLoadingMode === LoadingMode.Delay) {
-      // requestIdleCallback(() => loadComponents())
-      fullyLoaded(() => loadComponents().then(resolve))
+      fullyLoaded(() => loadComponents().then(resolve).catch(reject))
     } else if (generalSettings.scriptLoadingMode === LoadingMode.Race) {
-      contentLoaded(() => loadComponents().then(resolve))
+      contentLoaded(() => loadComponents().then(resolve).catch(reject))
     }
   })
 }

@@ -37,8 +37,13 @@ export const component = defineComponentMetadata({
     }
     Promise.race([
       select('.multi-page-v1 .head-left h3'),
+      select('.video-sections-v1 .first-line-title'),
       select('.base-video-sections-v1 .first-line-title'),
+      select('.video-pod .video-pod__header .title'),
     ]).then(titleElement => {
+      if (!titleElement) {
+        return
+      }
       titleElement.addEventListener(
         'click',
         (e: MouseEvent) => {

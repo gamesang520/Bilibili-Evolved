@@ -1,7 +1,26 @@
-import { defineComponentMetadata } from '@/components/define'
+import {
+  defineComponentMetadata,
+  defineOptionsMetadata,
+  OptionsOfMetadata,
+} from '@/components/define'
 import { matchUrlPattern } from '@/core/utils'
 import { columnUrls, feedsUrls } from '@/core/utils/urls'
 import { setupFeedImageExporter } from './feed'
+
+const options = defineOptionsMetadata({
+  columnFormat: {
+    defaultValue: '[title][ - n]',
+    displayName: '专栏图片命名格式',
+    multiline: true,
+  },
+  feedFormat: {
+    defaultValue: '[user][ - id][ - n]',
+    displayName: '动态图片命名格式',
+    multiline: true,
+  },
+})
+
+export type Options = OptionsOfMetadata<typeof options>
 
 export const component = defineComponentMetadata({
   name: 'imageExporter',
@@ -15,14 +34,5 @@ export const component = defineComponentMetadata({
     component: () => import('./Widget.vue').then(m => m.default),
   },
   urlInclude: [...feedsUrls, ...columnUrls],
-  options: {
-    columnFormat: {
-      defaultValue: '[title][ - n]',
-      displayName: '专栏图片命名格式',
-    },
-    feedFormat: {
-      defaultValue: '[user][ - id][ - n]',
-      displayName: '动态图片命名格式',
-    },
-  },
+  options,
 })

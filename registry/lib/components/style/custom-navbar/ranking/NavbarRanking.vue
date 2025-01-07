@@ -30,6 +30,10 @@ const entries = [
     href: 'https://www.bilibili.com/v/popular/rank/all',
     name: '排行榜',
   },
+  {
+    href: 'https://www.bilibili.com/v/popular/music',
+    name: '全站音乐榜',
+  },
 ] as RankingEntry[]
 export default Vue.extend({
   name: 'RankingPopup',

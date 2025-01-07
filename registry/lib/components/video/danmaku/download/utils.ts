@@ -5,6 +5,9 @@ import { getFriendlyTitle } from '@/core/utils/title'
 import { DanmakuConverterConfig, DanmakuConverter } from '../converter/danmaku-converter'
 import { DanmakuType } from '../converter/danmaku-type'
 import { XmlDanmaku } from '../converter/xml-danmaku'
+import { playerAgent } from '@/components/video/player-agent'
+import { getComponentSettings } from '@/core/settings'
+import { DownloadDanmakuOptions } from './options'
 
 export class JsonDanmaku {
   // static SegmentSize = 6 * 60
@@ -41,19 +44,8 @@ export class JsonDanmaku {
     }))
   }
   async fetchInfo() {
-    const { decodeDanmakuSegment, decodeDanmakuView } = await import('../converter/danmaku-segment')
-    // 这里为了兼容 pakku, 只能用 fetch https://github.com/xmcp/pakku.js/issues/153
-    const fetchBlob = async (url: string) => {
-      const response = await fetch(url)
-      return response.blob()
-    }
-    const viewBlob = await fetchBlob(
-      `https://api.bilibili.com/x/v2/dm/web/view?type=1&oid=${this.cid}&pid=${this.aid}`,
-    )
-    if (!viewBlob) {
-      throw new Error('获取弹幕信息失败')
-    }
-    const view = await decodeDanmakuView(viewBlob)
+    const { getDanmakuSegment, getDanmakuView } = await import('../converter/danmaku-segment')
+    const view = await getDanmakuView(this.aid, this.cid)
     const { total } = view.dmSge
     if (total === undefined) {
       throw new Error(`获取弹幕分页数失败: ${JSON.stringify(lodash.omit(view, 'flag'))}`)
@@ -61,18 +53,18 @@ export class JsonDanmaku {
     console.log('segment count =', total)
     const segments = await Promise.all(
       new Array(total).fill(0).map(async (_, index) => {
-        const blob = await fetchBlob(
-          `https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=${this.cid}&pid=${
-            this.aid
-          }&segment_index=${index + 1}`,
-        )
-        if (!blob) {
-          logError(new Error(`弹幕片段${index + 1}下载失败`))
-          return []
+        try {
+          const result = await getDanmakuSegment(this.aid, this.cid, index)
+          const elements: any[] = result.elems ?? []
+          console.log(
+            `received blob for segment ${index + 1}, count = ${elements.length}, result =`,
+            result,
+          )
+          return elements
+        } catch (error) {
+          logError(error)
+          throw error
         }
-        console.log(`received blob for segment ${index + 1}`, blob)
-        const result = await decodeDanmakuSegment(blob)
-        return result.elems ?? []
       }),
     )
     this.jsonDanmakus = segments.flat().sort(ascendingSort(it => it.progress ?? 0))
@@ -81,6 +73,8 @@ export class JsonDanmaku {
 }
 export type DanmakuDownloadType = 'json' | 'xml' | 'ass'
 export const getUserDanmakuConfig = async () => {
+  const downloadDanmakuOptions =
+    getComponentSettings<DownloadDanmakuOptions>('downloadDanmaku').options
   const title = getFriendlyTitle()
   const defaultConfig: Omit<DanmakuConverterConfig, 'title'> = {
     font: '微软雅黑',
@@ -108,9 +102,6 @@ export const getUserDanmakuConfig = async () => {
     const playerSettingsJson = localStorage.getItem('bilibili_player_settings')
 
     if (playerSettingsJson) {
-      const playerSettings = JSON.parse(playerSettingsJson)
-      const getConfig = <T>(prop: string, defaultValue?: T): T =>
-        lodash.get(playerSettings, `setting_config.${prop}`, defaultValue)
       // 屏蔽类型
       config.blockTypes = (() => {
         const result: (DanmakuType | 'color')[] = []
@@ -122,7 +113,7 @@ export const getUserDanmakuConfig = async () => {
         }
 
         for (const [type, value] of Object.entries(blockValues)) {
-          if (lodash.get(playerSettings, `block.type_${type}`, true) === false) {
+          if (playerAgent.getPlayerConfig<boolean>(`block.type_${type}`, true) === false) {
             result.push(...(value as (DanmakuType | 'color')[]))
           }
         }
@@ -130,13 +121,17 @@ export const getUserDanmakuConfig = async () => {
       })()
 
       // 加粗
-      config.bold = getConfig('bold', false)
+      config.bold = playerAgent.getPlayerConfig('dmSetting.bold', false)
 
       // 透明度
-      config.alpha = lodash.clamp(1 - parseFloat(getConfig('opacity', '0.4')), 0, 1)
+      config.alpha = lodash.clamp(
+        1 - parseFloat(playerAgent.getPlayerConfig('dmSetting.opacity', '0.4')),
+        0,
+        1,
+      )
 
       // 分辨率
-      const resolutionFactor = 1.4 - 0.4 * getConfig('fontsize', 1)
+      const resolutionFactor = 1.4 - 0.4 * playerAgent.getPlayerConfig('dmSetting.fontsize', 1)
       config.resolution = {
         x: Math.round(1920 * resolutionFactor),
         y: Math.round(1080 * resolutionFactor),
@@ -144,7 +139,11 @@ export const getUserDanmakuConfig = async () => {
 
       // 弹幕持续时长
       config.duration = (() => {
-        const scrollDuration = 18 - 3 * getConfig('speedplus', 0)
+        const speed =
+          downloadDanmakuOptions.speed === 'auto'
+            ? playerAgent.getPlayerConfig('dmSetting.speedplus', 0)
+            : downloadDanmakuOptions.speed
+        const scrollDuration = 18 - 3 * speed
         return (danmaku: { type: number }) => {
           switch (danmaku.type) {
             case 4:
@@ -157,23 +156,28 @@ export const getUserDanmakuConfig = async () => {
       })()
 
       // 底部间距
-      const bottomMargin = getConfig('danmakuArea', 0)
+      const bottomMargin = playerAgent.getPlayerConfig('dmSetting.danmakuArea', 0)
       config.bottomMarginPercent = bottomMargin >= 100 ? 0 : bottomMargin / 100
       // 无显示区域限制时要检查是否开启防挡字幕
-      if (config.bottomMarginPercent === 0 && getConfig('preventshade', false)) {
+      if (
+        config.bottomMarginPercent === 0 &&
+        playerAgent.getPlayerConfig('dmSetting.preventshade', false)
+      ) {
         config.bottomMarginPercent = 0.15
       }
 
       // 用户屏蔽词
-      const blockSettings = lodash.get(playerSettings, 'block.list', []) as {
-        /** 类型 */
-        t: 'keyword' | 'regexp' | 'user'
-        /** 内容 */
-        v: string
-        /** 是否开启 */
-        s: boolean
-        id: number
-      }[]
+      const blockSettings = playerAgent.getPlayerConfig<
+        {
+          /** 类型 */
+          t: 'keyword' | 'regexp' | 'user'
+          /** 内容 */
+          v: string
+          /** 是否开启 */
+          s: boolean
+          id: number
+        }[]
+      >('block.list', [])
       config.blockFilter = danmaku => {
         for (const b of blockSettings) {
           if (!b.s) {

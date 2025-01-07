@@ -2,19 +2,16 @@ import { defineComponentMetadata } from '@/components/define'
 import { PackageEntry } from '@/core/download'
 import { hasVideo } from '@/core/spin-query'
 import { Toast } from '@/core/toast'
-import { videoUrls } from '@/core/utils/urls'
+import { videoAndBangumiUrls } from '@/core/utils/urls'
 import { DownloadVideoAssets } from '../../download/types'
 import { getBlobByType, SubtitleDownloadType } from './utils'
 
 export const component = defineComponentMetadata({
   name: 'downloadSubtitle',
   displayName: '下载字幕',
-  description: {
-    'zh-CN': '启用下载字幕支持, 在视频页面中可从功能面板里下载字幕.',
-  },
   tags: [componentsTags.video],
   entry: none,
-  urlInclude: videoUrls,
+  urlInclude: videoAndBangumiUrls,
   widget: {
     condition: hasVideo,
     component: () => import('./DownloadSubtitle.vue').then(m => m.default),

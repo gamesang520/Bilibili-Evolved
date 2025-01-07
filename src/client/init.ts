@@ -35,6 +35,16 @@ export const init = async () => {
   })
 
   const { coreApis, externalApis } = await import('@/core/core-apis')
+  if (
+    unsafeWindow.bangumi_area_limit_hack &&
+    coreApis.settings.getComponentSettings<{ disableOnBalh: boolean }>('compatibilities').options
+      .disableOnBalh &&
+    coreApis.utils.matchUrlPattern('//www.bilibili.com/bangumi/play/')
+  ) {
+    console.log('BALH detected, Bilibili Evolved is disabled.')
+    return
+  }
+
   unsafeWindow.bilibiliEvolved = externalApis
   /** sand-boxed window, safe to use original name */
   window.coreApis = coreApis
@@ -63,7 +73,9 @@ export const init = async () => {
 
   await promiseLoadTrace('load components', async () => {
     const { loadAllComponents } = await import('@/components/component')
-    return Promise.allSettled([loadAllComponents(), loadAllCustomStyles()])
+    return Promise.all([loadAllComponents(), loadAllCustomStyles()]).catch(error => {
+      console.error(error)
+    })
   })
   raiseLifeCycleEvent(LifeCycleEventTypes.ComponentsLoaded)
 

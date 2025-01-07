@@ -43,8 +43,7 @@ export interface ComponentTag {
 
 type ComponentOptionValidator<T> = (value: T, oldValue: T) => T | undefined | null
 
-// TODO: 参考 discussion #3041。当不兼容代码替换完成后将 any 改为 unknown
-export type UnknownOptions = Record<string, any>
+export type UnknownOptions = Record<string, unknown>
 
 export type EmptyOptions = Record<string, never>
 
@@ -60,13 +59,15 @@ export interface OptionMetadata<V = unknown> {
   hidden?: boolean
   /** 设为 `true` 时, 将用颜色选取器替代文本框 */
   color?: boolean
+  /** 设为 `true` 时, 使用多行文本框 */
+  multiline?: boolean
   /** 设置范围, 可以显示为一个滑动条 */
   slider?: {
     min?: number
     max?: number
     step?: number
   }
-  /** `number`, `string`或`Range`类型的选项, 可以添加验证函数来阻止非法输入 */
+  /** `number`, `string` 或 `Range` 类型的选项, 可以添加验证函数来阻止非法输入 */
   validator?:
     | ComponentOptionValidator<Range<string>>
     | ComponentOptionValidator<string>
@@ -77,10 +78,6 @@ export interface OptionMetadata<V = unknown> {
 export type OptionsMetadata<O extends UnknownOptions = UnknownOptions> = {
   [OptionName in keyof O]: OptionMetadata<O[OptionName]>
 }
-
-// TODO: 参考 discussion #3041。当不兼容代码替换完成后删除
-export type ComponentOptions = OptionsMetadata
-export type ComponentOption = OptionMetadata
 
 /** 组件标签 */
 export const componentsTags = {
@@ -166,6 +163,21 @@ export type ComponentEntry<O extends UnknownOptions = UnknownOptions, T = unknow
   context: ComponentEntryContext<O>,
 ) => T | Promise<T>
 
+export interface InstantStyleDefinition {
+  /** 样式ID */
+  name: string
+  /** 样式内容, 可以是一个导入样式的函数 */
+  style: string | (() => Promise<{ default: string }>)
+}
+export interface DomInstantStyleDefinition extends InstantStyleDefinition {
+  /** 设为 `true` 则注入到 `document.body` 末尾, 否则注入到 `document.head` 末尾 */
+  important?: boolean
+}
+export interface ShadowDomInstantStyleDefinition extends InstantStyleDefinition {
+  /** 设为 `true` 则注入到 Shadow DOM 中 */
+  shadowDom?: boolean
+}
+
 /** 带有函数/复杂对象的组件信息 */
 export interface FunctionalMetadata<O extends UnknownOptions = UnknownOptions> {
   /** 主入口, 重新开启时不会再运行 */
@@ -173,14 +185,7 @@ export interface FunctionalMetadata<O extends UnknownOptions = UnknownOptions> {
   /** 导出小组件 */
   widget?: Omit<Widget, 'name'>
   /** 首屏样式, 会尽快注入 (before DCL) */
-  instantStyles?: {
-    /** 样式ID */
-    name: string
-    /** 样式内容, 可以是一个导入样式的函数 */
-    style: string | (() => Promise<{ default: string }>)
-    /** 设为`true`则注入到`document.body`末尾, 否则注入到`document.head`末尾 */
-    important?: boolean
-  }[]
+  instantStyles?: (DomInstantStyleDefinition | ShadowDomInstantStyleDefinition)[]
   /** 重新开启时执行 */
   reload?: Executable
   /** 关闭时执行 */
@@ -221,3 +226,6 @@ export interface ComponentMetadata<O extends UnknownOptions = UnknownOptions>
 
 /** 用户组件的非函数基本信息, 用于直接保存为 JSON */
 export type UserComponentMetadata = Omit<ComponentMetadata, keyof FunctionalMetadata>
+
+/** 推断 Record 的 Value 类型 */
+export type RecordValue<R> = R extends Record<any, infer V> ? V : never
